@@ -363,7 +363,10 @@ function splitAmount(amount, rule) {
 function addScheduledItem(items, alerts, row, entry) {
   const rule = getRules(row.code, entry.type);
   if (!rule) {
-    alerts.push({ type: "danger", text: `${row.code}: MVP未対応コードです。オーナー確認へ回してください。` });
+    const text = `${row.code}: MVP未対応コードです。オーナー確認へ回してください。`;
+    if (!alerts.some((alert) => alert.text === text)) {
+      alerts.push({ type: "danger", text });
+    }
     return;
   }
   const split = splitAmount(entry.amount, rule);
