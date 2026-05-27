@@ -163,18 +163,38 @@ function extractCustomer(line, code) {
   return cleaned || "顧客名未読取";
 }
 
+function extractCustomerFromBlock(block, code) {
+  const normalized = normalizeText(block);
+  const patterns = [
+    /Customer[:：]?\s*(.+?)(?:Agency\s*Code|YBY\d{3}|Plan|Initial|Monthly|$)/i,
+    /顧客名[:：]?\s*(.+?)(?:代理店コード|YBY\d{3}|プラン|初期|月額|$)/i,
+    /契約先[:：]?\s*(.+?)(?:代理店コード|YBY\d{3}|プラン|初期|月額|$)/i
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match && normalizeText(match[1])) {
+      return normalizeText(match[1]).replace(code, "").trim();
+    }
+  }
+  return extractCustomer(normalized, code);
+}
+
 function parseStatementText(text) {
   const normalized = normalizeText(text);
   const lines = normalized.split(/\r?\n/).map((line) => normalizeText(line)).filter(Boolean);
   const rows = [];
+  const codeLineIndexes = lines
+    .map((line, index) => (line.match(/YBY\d{3}/i) ? index : -1))
+    .filter((index) => index >= 0);
 
   lines.forEach((line, index) => {
     const codeMatch = line.match(/YBY\d{3}/i);
     if (!codeMatch) return;
 
-    const block = [lines[index - 1], line, lines[index + 1], lines[index + 2], lines[index + 3]]
-      .filter(Boolean)
-      .join(" ");
+    const nextCodeIndex = codeLineIndexes.find((lineIndex) => lineIndex > index);
+    const start = Math.max(0, index - 6);
+    const end = Math.min(lines.length, nextCodeIndex ? nextCodeIndex : index + 12);
+    const block = lines.slice(start, end).join(" ");
     const code = codeMatch[0].toUpperCase();
     let initialFee = extractAmount(block, "初期(?:手数料)?");
     let monthlyFee = extractAmount(block, "月額(?:手数料)?");
@@ -188,7 +208,7 @@ function parseStatementText(text) {
     }
 
     rows.push({
-      customer: extractCustomer(line, code),
+      customer: extractCustomerFromBlock(block, code),
       code,
       plan: extractPlan(block),
       initialFee,
