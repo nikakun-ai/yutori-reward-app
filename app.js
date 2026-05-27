@@ -7,6 +7,7 @@ const copyFallbackButton = document.querySelector("#copyFallbackButton");
 const reviewPanel = document.querySelector("#reviewPanel");
 const reviewCount = document.querySelector("#reviewCount");
 const periodInput = document.querySelector("#periodInput");
+const payoutMonthInput = document.querySelector("#payoutMonthInput");
 const rowsContainer = document.querySelector("#rowsContainer");
 const calculateButton = document.querySelector("#calculateButton");
 const ownerEscalationButton = document.querySelector("#ownerEscalationButton");
@@ -107,6 +108,29 @@ function currentMonthValue() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function normalizeMonth(value, fallback = currentMonthValue()) {
+  const match = String(value || "").match(/(20\d{2})[-年\/.]?(\d{1,2})/);
+  if (!match) return fallback;
+  return `${match[1]}-${String(Number(match[2])).padStart(2, "0")}`;
+}
+
+function addMonths(monthValue, offset) {
+  const normalized = normalizeMonth(monthValue);
+  const [year, month] = normalized.split("-").map(Number);
+  const date = new Date(year, month - 1 + offset, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonth(monthValue) {
+  const normalized = normalizeMonth(monthValue);
+  const [year, month] = normalized.split("-");
+  return `${year}年${Number(month)}月`;
+}
+
+function monthEndLabel(monthValue) {
+  return `${formatMonth(monthValue)}末`;
+}
+
 function setStatus(message, kind = "info") {
   uploadStatus.textContent = message;
   uploadStatus.style.color = kind === "danger" ? "var(--danger)" : "var(--muted)";
@@ -128,7 +152,7 @@ function parsePeriod(text) {
   const normalized = normalizeText(text);
   const match = normalized.match(/(20\d{2})[年\/.-]\s?(\d{1,2})/);
   if (!match) return currentMonthValue();
-  return `${match[1]}-${String(Number(match[2])).padStart(2, "0")}`;
+  return normalizeMonth(`${match[1]}-${match[2]}`);
 }
 
 function extractAmount(block, keyword) {
@@ -279,6 +303,10 @@ function renderRows() {
           <input data-field="plan" data-index="${index}" value="${escapeHtml(row.plan)}">
         </label>
         <label class="field">
+          <span>申込/初回入金月</span>
+          <input data-field="contractMonth" data-index="${index}" type="month" value="${escapeHtml(row.contractMonth || periodInput.value || currentMonthValue())}">
+        </label>
+        <label class="field">
           <span>初期手数料</span>
           <input data-field="initialFee" data-index="${index}" inputmode="numeric" value="${row.initialFee || ""}">
         </label>
@@ -293,7 +321,7 @@ function renderRows() {
 }
 
 function isRowReady(row) {
-  return Boolean(row.customer && /^YBY\d{3}$/i.test(row.code) && row.plan && (toNumber(row.initialFee) > 0 || toNumber(row.monthlyFee) > 0));
+  return Boolean(row.customer && /^YBY\d{3}$/i.test(row.code) && row.plan && row.contractMonth && (toNumber(row.initialFee) > 0 || toNumber(row.monthlyFee) > 0));
 }
 
 function escapeHtml(value) {
@@ -332,38 +360,91 @@ function splitAmount(amount, rule) {
   };
 }
 
-function calculateDistribution() {
-  const rows = collectRowsFromForm();
-  const items = [];
-  const alerts = [];
+function addScheduledItem(items, alerts, row, entry) {
+  const rule = getRules(row.code, entry.type);
+  if (!rule) {
+    alerts.push({ type: "danger", text: `${row.code}: MVP未対応コードです。オーナー確認へ回してください。` });
+    return;
+  }
+  const split = splitAmount(entry.amount, rule);
+  const total = split.yutori + split.yosuke + split.owner;
+  if (total !== entry.amount) {
+    alerts.push({ type: "danger", text: `${row.customer}: 配分合計に差異があります。` });
+  }
+  items.push({ ...row, ...entry, split });
+}
 
+function buildScheduleItems(rows, alerts) {
+  const items = [];
   rows.forEach((row, index) => {
     if (!isRowReady(row)) {
       alerts.push({ type: "danger", text: `明細${index + 1}: 読取不足があります。オーナー確認へ回してください。` });
       return;
     }
-    [
-      { type: "initial", label: "初期", amount: toNumber(row.initialFee) },
-      { type: "monthly", label: "月額", amount: toNumber(row.monthlyFee) }
-    ].forEach((entry) => {
-      if (!entry.amount) return;
-      const rule = getRules(row.code, entry.type);
-      if (!rule) {
-        alerts.push({ type: "danger", text: `${row.code}: MVP未対応コードです。オーナー確認へ回してください。` });
-        return;
-      }
-      const split = splitAmount(entry.amount, rule);
-      const total = split.yutori + split.yosuke + split.owner;
-      if (total !== entry.amount) {
-        alerts.push({ type: "danger", text: `${row.customer}: 配分合計に差異があります。` });
-      }
-      items.push({ ...row, feeType: entry.label, amount: entry.amount, split });
-    });
+
+    const contractMonth = normalizeMonth(row.contractMonth, periodInput.value || currentMonthValue());
+    const initialFee = toNumber(row.initialFee);
+    const monthlyFee = toNumber(row.monthlyFee);
+
+    if (initialFee > 0) {
+      addScheduledItem(items, alerts, { ...row, contractMonth }, {
+        type: "initial",
+        feeType: "初期",
+        amount: initialFee,
+        receivedMonth: contractMonth,
+        targetMonth: contractMonth,
+        payoutMonth: addMonths(contractMonth, 1),
+        scheduleNote: "申込時入金分。翌月末支払い"
+      });
+    }
+
+    if (monthlyFee > 0 && initialFee > 0) {
+      [0, 1].forEach((offset) => {
+        const targetMonth = addMonths(contractMonth, 2 + offset);
+        addScheduledItem(items, alerts, { ...row, contractMonth }, {
+          type: "monthly",
+          feeType: `月額${offset + 1}か月目`,
+          amount: monthlyFee,
+          receivedMonth: contractMonth,
+          targetMonth,
+          payoutMonth: targetMonth,
+          scheduleNote: `申込時の前受け分から${formatMonth(targetMonth)}分を消化`
+        });
+      });
+      return;
+    }
+
+    if (monthlyFee > 0) {
+      const targetMonth = addMonths(contractMonth, 1);
+      addScheduledItem(items, alerts, { ...row, contractMonth }, {
+        type: "monthly",
+        feeType: "月額",
+        amount: monthlyFee,
+        receivedMonth: contractMonth,
+        targetMonth,
+        payoutMonth: targetMonth,
+        scheduleNote: "口座振替の翌月分入金。対象月末支払い"
+      });
+    }
   });
+  return items.sort((a, b) => `${a.payoutMonth}-${a.customer}`.localeCompare(`${b.payoutMonth}-${b.customer}`));
+}
+
+function calculateDistribution() {
+  const rows = collectRowsFromForm();
+  const alerts = [];
+  const scheduleItems = buildScheduleItems(rows, alerts);
+  const payoutMonth = normalizeMonth(payoutMonthInput.value, currentMonthValue());
+  const items = scheduleItems.filter((item) => item.payoutMonth === payoutMonth);
+  if (!items.length && scheduleItems.length && !alerts.some((alert) => alert.type === "danger")) {
+    alerts.push({ type: "warn", text: `${formatMonth(payoutMonth)}に支払予定の明細はありません。支払月を確認してください。` });
+  }
 
   calculated = {
     period: periodInput.value || currentMonthValue(),
+    payoutMonth,
     items,
+    scheduleItems,
     alerts
   };
 
@@ -375,7 +456,13 @@ function collectRowsFromForm() {
     const index = Number(input.dataset.index);
     const field = input.dataset.field;
     const value = field === "initialFee" || field === "monthlyFee" ? toNumber(input.value) : normalizeText(input.value);
-    statementRows[index][field] = field === "code" ? String(value).toUpperCase() : value;
+    if (field === "code") {
+      statementRows[index][field] = String(value).toUpperCase();
+    } else if (field === "contractMonth") {
+      statementRows[index][field] = normalizeMonth(value, periodInput.value || currentMonthValue());
+    } else {
+      statementRows[index][field] = value;
+    }
   });
   return statementRows;
 }
@@ -385,7 +472,7 @@ function renderResults() {
   resultPanel.classList.remove("hidden");
   const totals = sumByPayee(calculated.items);
   const hasBlockingAlert = calculated.alerts.some((alert) => alert.type === "danger");
-  resultStatus.textContent = hasBlockingAlert ? "要確認" : "OK";
+  resultStatus.textContent = hasBlockingAlert ? "要確認" : `${formatMonth(calculated.payoutMonth)}支払`;
   outputPanel.classList.toggle("hidden", hasBlockingAlert || calculated.items.length === 0);
 
   summaryCards.innerHTML = Object.values(PAYEES).map((payee) => `
@@ -400,12 +487,26 @@ function renderResults() {
   `).join("");
 
   distributionTable.innerHTML = `
+    <h3 class="table-heading">今回支払う明細（${escapeHtml(monthEndLabel(calculated.payoutMonth))}）</h3>
+    ${renderScheduleTable(calculated.items, true)}
+    <h3 class="table-heading">支払予定表</h3>
+    ${renderScheduleTable(calculated.scheduleItems, false)}
+  `;
+}
+
+function renderScheduleTable(items, compact) {
+  if (!items.length) {
+    return `<p class="empty-text">該当する明細はありません。</p>`;
+  }
+  return `
     <table>
       <thead>
         <tr>
           <th>顧客</th>
           <th>コード</th>
           <th>区分</th>
+          ${compact ? "" : "<th>入金月</th><th>対象月</th>"}
+          <th>支払月</th>
           <th class="amount">原資</th>
           <th class="amount">ゆとりBASE</th>
           <th class="amount">ヨウスケさん</th>
@@ -413,11 +514,13 @@ function renderResults() {
         </tr>
       </thead>
       <tbody>
-        ${calculated.items.map((item) => `
+        ${items.map((item) => `
           <tr>
-            <td>${escapeHtml(item.customer)}<br><small>${escapeHtml(item.plan)}</small></td>
+            <td>${escapeHtml(item.customer)}<br><small>${escapeHtml(item.plan)}</small>${compact ? "" : `<br><small>${escapeHtml(item.scheduleNote)}</small>`}</td>
             <td>${escapeHtml(item.code)}</td>
             <td>${escapeHtml(item.feeType)}</td>
+            ${compact ? "" : `<td>${escapeHtml(formatMonth(item.receivedMonth))}</td><td>${escapeHtml(formatMonth(item.targetMonth))}</td>`}
+            <td>${escapeHtml(monthEndLabel(item.payoutMonth))}</td>
             <td class="amount">${yen.format(item.amount)}</td>
             <td class="amount">${yen.format(item.split.yutori)}</td>
             <td class="amount">${yen.format(item.split.yosuke)}</td>
@@ -441,7 +544,7 @@ function sumByPayee(items) {
 function buildTransferHtml() {
   const totals = sumByPayee(calculated.items);
   return reportContent("振込明細", `
-    <p class="warning">テスト用ダミー情報。実運用前に銀行情報を差し替えてください。</p>
+    <p class="warning">テスト用ダミー情報。${escapeHtml(monthEndLabel(calculated.payoutMonth))}に振り込む分だけを表示しています。実運用前に銀行情報を差し替えてください。</p>
     <table>
       <thead><tr><th>支払先</th><th>銀行情報</th><th>振込額</th><th>備考</th></tr></thead>
       <tbody>
@@ -460,18 +563,21 @@ function buildTransferHtml() {
 
 function buildDistributionHtml() {
   return reportContent("報酬配分明細", `
-    <p class="warning">テスト用ダミー情報。LK明細、配分率、税務処理は実運用前に確認してください。</p>
+    <p class="warning">テスト用ダミー情報。初期費用は申込入金月の翌月末、月額は対象月末支払いとして予定化しています。</p>
     <table>
       <thead>
-        <tr><th>顧客</th><th>コード</th><th>プラン</th><th>区分</th><th>原資</th><th>ゆとりBASE</th><th>ヨウスケさん</th><th>オーナー</th></tr>
+        <tr><th>顧客</th><th>コード</th><th>プラン</th><th>区分</th><th>入金月</th><th>対象月</th><th>支払月</th><th>原資</th><th>ゆとりBASE</th><th>ヨウスケさん</th><th>オーナー</th></tr>
       </thead>
       <tbody>
-        ${calculated.items.map((item) => `
+        ${calculated.scheduleItems.map((item) => `
           <tr>
             <td>${escapeHtml(item.customer)}</td>
             <td>${escapeHtml(item.code)}</td>
             <td>${escapeHtml(item.plan)}</td>
             <td>${escapeHtml(item.feeType)}</td>
+            <td>${escapeHtml(formatMonth(item.receivedMonth))}</td>
+            <td>${escapeHtml(formatMonth(item.targetMonth))}</td>
+            <td>${escapeHtml(monthEndLabel(item.payoutMonth))}</td>
             <td class="right">${yen.format(item.amount)}</td>
             <td class="right">${yen.format(item.split.yutori)}</td>
             <td class="right">${yen.format(item.split.yosuke)}</td>
@@ -494,19 +600,20 @@ function buildNoticeHtml() {
   return reportContent("支払通知書", grouped.map(({ payee, rows }) => `
     <section class="notice">
       <h2>${escapeHtml(payee.name)} 御中</h2>
-      <p>対象月: ${escapeHtml(calculated.period)} / インボイス番号: ${escapeHtml(payee.invoice)}</p>
+      <p>支払月: ${escapeHtml(monthEndLabel(calculated.payoutMonth))} / インボイス番号: ${escapeHtml(payee.invoice)}</p>
       <table>
-        <thead><tr><th>顧客</th><th>コード</th><th>区分</th><th>支払額</th></tr></thead>
+        <thead><tr><th>顧客</th><th>コード</th><th>区分</th><th>対象月</th><th>支払額</th></tr></thead>
         <tbody>
           ${rows.map(({ item, amount }) => `
             <tr>
               <td>${escapeHtml(item.customer)}</td>
               <td>${escapeHtml(item.code)}</td>
               <td>${escapeHtml(item.feeType)}</td>
+              <td>${escapeHtml(formatMonth(item.targetMonth))}</td>
               <td class="right">${yen.format(amount)}</td>
             </tr>
           `).join("")}
-          <tr class="total"><td colspan="3">合計</td><td class="right">${yen.format(rows.reduce((sum, row) => sum + row.amount, 0))}</td></tr>
+          <tr class="total"><td colspan="4">合計</td><td class="right">${yen.format(rows.reduce((sum, row) => sum + row.amount, 0))}</td></tr>
         </tbody>
       </table>
     </section>
@@ -517,7 +624,7 @@ function reportContent(title, body) {
   return `
     <article class="print-document">
       <h1>${escapeHtml(title)}</h1>
-      <div class="meta">対象月: ${escapeHtml(calculated.period)} / 作成日: ${new Date().toLocaleDateString("ja-JP")}</div>
+      <div class="meta">読取対象月: ${escapeHtml(formatMonth(calculated.period))} / 今回支払月: ${escapeHtml(monthEndLabel(calculated.payoutMonth))} / 作成日: ${new Date().toLocaleDateString("ja-JP")}</div>
       ${body}
     </article>`;
 }
@@ -533,9 +640,13 @@ function openReport(type) {
 
 function exportCsv() {
   if (!calculated) return;
-  const header = ["対象月", "顧客", "代理店コード", "プラン", "区分", "原資", "ゆとりBASE", "ヨウスケさん", "オーナー"];
-  const rows = calculated.items.map((item) => [
+  const header = ["今回支払対象", "読取対象月", "入金月", "対象月", "支払月", "顧客", "代理店コード", "プラン", "区分", "原資", "ゆとりBASE", "ヨウスケさん", "オーナー"];
+  const rows = calculated.scheduleItems.map((item) => [
+    item.payoutMonth === calculated.payoutMonth ? "今回" : "",
     calculated.period,
+    item.receivedMonth,
+    item.targetMonth,
+    item.payoutMonth,
     item.customer,
     item.code,
     item.plan,
@@ -557,8 +668,15 @@ function exportCsv() {
 
 function loadRows(rows, period = currentMonthValue()) {
   clearFailure();
-  statementRows = rows.map((row) => ({ ...row, code: String(row.code || "").toUpperCase() }));
-  periodInput.value = period;
+  const normalizedPeriod = normalizeMonth(period);
+  statementRows = rows.map((row) => ({
+    ...row,
+    code: String(row.code || "").toUpperCase(),
+    contractMonth: normalizeMonth(row.contractMonth || normalizedPeriod, normalizedPeriod)
+  }));
+  periodInput.value = normalizedPeriod;
+  const hasInitial = statementRows.some((row) => toNumber(row.initialFee) > 0);
+  payoutMonthInput.value = hasInitial ? addMonths(normalizedPeriod, 1) : addMonths(normalizedPeriod, 1);
   reviewPanel.classList.remove("hidden");
   resultPanel.classList.add("hidden");
   outputPanel.classList.add("hidden");
@@ -595,6 +713,8 @@ function resetAll() {
   reviewPanel.classList.add("hidden");
   resultPanel.classList.add("hidden");
   outputPanel.classList.add("hidden");
+  periodInput.value = currentMonthValue();
+  payoutMonthInput.value = addMonths(currentMonthValue(), 1);
   setStatus("PDFはスマホ内のブラウザで処理されます。外部APIへ送信しません。");
 }
 
@@ -652,7 +772,9 @@ rowsContainer.addEventListener("input", (event) => {
   if (!field || Number.isNaN(index)) return;
   statementRows[index][field] = field === "initialFee" || field === "monthlyFee"
     ? toNumber(target.value)
-    : normalizeText(target.value);
+    : field === "contractMonth"
+      ? normalizeMonth(target.value, periodInput.value || currentMonthValue())
+      : normalizeText(target.value);
 });
 
 if ("serviceWorker" in navigator) {
@@ -662,3 +784,4 @@ if ("serviceWorker" in navigator) {
 }
 
 periodInput.value = currentMonthValue();
+payoutMonthInput.value = addMonths(currentMonthValue(), 1);
