@@ -9,9 +9,9 @@
     <title>ゆとりBASE 報酬分配</title>
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css?v=20260528-6">
+    <link rel="stylesheet" href="./styles.css?v=20260528-7">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
-    <script src="./app.js?v=20260528-6" defer></script>
+    <script src="./app.js?v=20260528-7" defer></script>
   </head>
   <body>
     <header class="app-header">
@@ -57,6 +57,26 @@
           <li>初回の月額2か月分は、利用対象月ごとに支払予定へ分けます。</li>
           <li>口座振替分は、翌月分の入金として対象月末に支払います。</li>
         </ul>
+      </section>
+
+      <section class="panel settings-panel">
+        <div class="section-title">
+          <h2>支払先設定</h2>
+          <span id="payeeStorageStatus" class="pill">端末保存</span>
+        </div>
+        <p class="note">銀行名、支店名、口座番号、名義、インボイス番号は、このスマホのブラウザ内だけに保存します。GitHubや外部APIには送信しません。</p>
+        <div class="button-row">
+          <button id="payeeSettingsToggle" class="secondary" type="button">設定を開く</button>
+          <button id="clearPayeeSettingsButton" class="ghost" type="button">端末保存を消去</button>
+        </div>
+        <div id="payeeSettingsPanel" class="payee-settings hidden">
+          <div id="payeeSettingsContainer" class="payee-settings-grid"></div>
+          <div class="button-row">
+            <button id="savePayeeSettingsButton" type="button">この端末に保存</button>
+            <button id="closePayeeSettingsButton" class="secondary" type="button">閉じる</button>
+          </div>
+          <p class="note">スマホを変更した場合やブラウザのデータを削除した場合は、もう一度入力が必要です。</p>
+        </div>
       </section>
 
       <section id="failurePanel" class="panel danger hidden">
@@ -117,7 +137,7 @@
       <section class="panel">
         <h2>実運用前の注意</h2>
         <ul class="check-list">
-          <li>銀行口座、住所、インボイス番号はダミーです。</li>
+          <li>銀行口座、名義、インボイス番号は支払先設定で入力した端末内データを使います。</li>
           <li>源泉徴収、消費税、正式な請求書要件は税理士確認前提です。</li>
           <li>実振込はアプリでは行いません。代表が銀行アプリで実行します。</li>
         </ul>

@@ -8,6 +8,13 @@ const reviewPanel = document.querySelector("#reviewPanel");
 const reviewCount = document.querySelector("#reviewCount");
 const periodInput = document.querySelector("#periodInput");
 const payoutMonthInput = document.querySelector("#payoutMonthInput");
+const payeeStorageStatus = document.querySelector("#payeeStorageStatus");
+const payeeSettingsToggle = document.querySelector("#payeeSettingsToggle");
+const clearPayeeSettingsButton = document.querySelector("#clearPayeeSettingsButton");
+const payeeSettingsPanel = document.querySelector("#payeeSettingsPanel");
+const payeeSettingsContainer = document.querySelector("#payeeSettingsContainer");
+const savePayeeSettingsButton = document.querySelector("#savePayeeSettingsButton");
+const closePayeeSettingsButton = document.querySelector("#closePayeeSettingsButton");
 const rowsContainer = document.querySelector("#rowsContainer");
 const calculateButton = document.querySelector("#calculateButton");
 const ownerEscalationButton = document.querySelector("#ownerEscalationButton");
@@ -27,29 +34,56 @@ const closePrintButton = document.querySelector("#closePrintButton");
 const browserPrintButton = document.querySelector("#browserPrintButton");
 const copyPrintTextButton = document.querySelector("#copyPrintTextButton");
 
+const PAYEE_STORAGE_KEY = "yutoriRewardPayeesV1";
+
 const PAYEES = {
   yutori: {
     id: "yutori",
+    role: "ゆとりBASE",
     name: "ゆとりBASE",
-    invoice: "T0000000000000",
-    bank: "ダミー銀行 ダミー支店 普通 0000000",
-    note: "テスト用ダミー情報"
+    invoice: "",
+    bankName: "",
+    branchName: "",
+    accountType: "普通",
+    accountNumber: "",
+    accountHolder: "",
+    note: ""
   },
   yosuke: {
     id: "yosuke",
+    role: "ヨウスケさん",
     name: "ヨウスケさん",
-    invoice: "未確認",
-    bank: "ダミー銀行 ダミー支店 普通 1111111",
-    note: "テスト用ダミー情報"
+    invoice: "",
+    bankName: "",
+    branchName: "",
+    accountType: "普通",
+    accountNumber: "",
+    accountHolder: "",
+    note: ""
   },
   owner: {
     id: "owner",
+    role: "オーナー",
     name: "オーナー",
-    invoice: "未確認",
-    bank: "ダミー銀行 ダミー支店 普通 2222222",
-    note: "テスト用ダミー情報"
+    invoice: "",
+    bankName: "",
+    branchName: "",
+    accountType: "普通",
+    accountNumber: "",
+    accountHolder: "",
+    note: ""
   }
 };
+
+const PAYEE_FIELDS = [
+  { key: "name", label: "表示名", placeholder: "例: 山田太郎 / 株式会社〇〇" },
+  { key: "invoice", label: "インボイス番号", placeholder: "例: T1234567890123 / 未登録" },
+  { key: "bankName", label: "銀行名", placeholder: "例: 〇〇銀行" },
+  { key: "branchName", label: "支店名", placeholder: "例: 〇〇支店" },
+  { key: "accountNumber", label: "口座番号", placeholder: "例: 1234567" },
+  { key: "accountHolder", label: "口座名義", placeholder: "例: ヤマダ タロウ" },
+  { key: "note", label: "備考", placeholder: "例: 振込手数料先方負担など" }
+];
 
 const SAMPLE_ROWS = [
   {
@@ -134,6 +168,135 @@ function monthEndLabel(monthValue) {
 function setStatus(message, kind = "info") {
   uploadStatus.textContent = message;
   uploadStatus.style.color = kind === "danger" ? "var(--danger)" : "var(--muted)";
+}
+
+function clonePayees() {
+  return JSON.parse(JSON.stringify(PAYEES));
+}
+
+function applySavedPayees(saved) {
+  if (!saved || typeof saved !== "object") return;
+  Object.keys(PAYEES).forEach((id) => {
+    if (saved[id] && typeof saved[id] === "object") {
+      Object.assign(PAYEES[id], {
+        name: normalizeText(saved[id].name) || PAYEES[id].role,
+        invoice: normalizeText(saved[id].invoice),
+        bankName: normalizeText(saved[id].bankName),
+        branchName: normalizeText(saved[id].branchName),
+        accountType: normalizeText(saved[id].accountType) || "普通",
+        accountNumber: normalizeText(saved[id].accountNumber),
+        accountHolder: normalizeText(saved[id].accountHolder),
+        note: normalizeText(saved[id].note)
+      });
+    }
+  });
+}
+
+function loadPayeeSettings() {
+  try {
+    const raw = localStorage.getItem(PAYEE_STORAGE_KEY);
+    if (raw) {
+      applySavedPayees(JSON.parse(raw));
+    }
+    updatePayeeStorageStatus();
+  } catch {
+    payeeStorageStatus.textContent = "保存不可";
+  }
+}
+
+function savePayeeSettings() {
+  Object.values(PAYEES).forEach((payee) => {
+    PAYEE_FIELDS.forEach(({ key }) => {
+      const input = payeeSettingsContainer.querySelector(`[data-payee="${payee.id}"][data-payee-field="${key}"]`);
+      if (input) payee[key] = normalizeText(input.value);
+    });
+    const typeInput = payeeSettingsContainer.querySelector(`[data-payee="${payee.id}"][data-payee-field="accountType"]`);
+    payee.accountType = normalizeText(typeInput?.value) || "普通";
+    payee.name = payee.name || payee.role;
+  });
+
+  try {
+    localStorage.setItem(PAYEE_STORAGE_KEY, JSON.stringify(clonePayees()));
+    updatePayeeStorageStatus();
+    setStatus("支払先設定をこの端末に保存しました。");
+    if (calculated) renderResults();
+  } catch {
+    setStatus("このブラウザでは支払先設定を保存できませんでした。", "danger");
+  }
+}
+
+function clearPayeeSettings() {
+  if (!confirm("この端末に保存した支払先情報を消去します。よろしいですか？")) return;
+  Object.values(PAYEES).forEach((payee) => {
+    payee.name = payee.role;
+    payee.invoice = "";
+    payee.bankName = "";
+    payee.branchName = "";
+    payee.accountType = "普通";
+    payee.accountNumber = "";
+    payee.accountHolder = "";
+    payee.note = "";
+  });
+  try {
+    localStorage.removeItem(PAYEE_STORAGE_KEY);
+  } catch {}
+  renderPayeeSettings();
+  updatePayeeStorageStatus();
+  setStatus("この端末に保存した支払先情報を消去しました。");
+  if (calculated) renderResults();
+}
+
+function updatePayeeStorageStatus() {
+  const hasSavedData = Object.values(PAYEES).some((payee) => payee.bankName || payee.branchName || payee.accountNumber || payee.accountHolder || payee.invoice || payee.note);
+  payeeStorageStatus.textContent = hasSavedData ? "保存済み" : "未設定";
+}
+
+function renderPayeeSettings() {
+  payeeSettingsContainer.innerHTML = Object.values(PAYEES).map((payee) => `
+    <fieldset class="payee-fieldset">
+      <legend>${escapeHtml(payee.role)}</legend>
+      <div class="form-grid">
+        ${PAYEE_FIELDS.map(({ key, label, placeholder }) => `
+          <label class="field">
+            <span>${escapeHtml(label)}</span>
+            <input data-payee="${escapeHtml(payee.id)}" data-payee-field="${escapeHtml(key)}" value="${escapeHtml(payee[key] || "")}" placeholder="${escapeHtml(placeholder)}">
+          </label>
+        `).join("")}
+        <label class="field">
+          <span>口座種別</span>
+          <select data-payee="${escapeHtml(payee.id)}" data-payee-field="accountType">
+            ${["普通", "当座", "貯蓄", "その他"].map((type) => `<option value="${type}"${(payee.accountType || "普通") === type ? " selected" : ""}>${type}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+    </fieldset>
+  `).join("");
+}
+
+function isPayeeReady(payee) {
+  return Boolean(payee.bankName && payee.branchName && payee.accountNumber && payee.accountHolder);
+}
+
+function formatBank(payee) {
+  if (!isPayeeReady(payee)) return "未設定（支払先設定で入力）";
+  return [
+    payee.bankName,
+    payee.branchName,
+    payee.accountType || "普通",
+    payee.accountNumber,
+    `名義 ${payee.accountHolder}`
+  ].filter(Boolean).join(" / ");
+}
+
+function formatInvoice(payee) {
+  return payee.invoice || "未設定";
+}
+
+function formatPayeeNote(payee) {
+  const pieces = [];
+  if (!isPayeeReady(payee)) pieces.push("口座情報未設定");
+  if (payee.note) pieces.push(payee.note);
+  return pieces.join(" / ") || "端末保存情報を使用";
 }
 
 function showFailure(message) {
@@ -442,6 +605,12 @@ function calculateDistribution() {
   if (!items.length && scheduleItems.length && !alerts.some((alert) => alert.type === "danger")) {
     alerts.push({ type: "warn", text: `${formatMonth(payoutMonth)}に支払予定の明細はありません。支払月を確認してください。` });
   }
+  const totals = sumByPayee(items);
+  Object.values(PAYEES).forEach((payee) => {
+    if ((totals[payee.id] || 0) > 0 && !isPayeeReady(payee)) {
+      alerts.push({ type: "warn", text: `${payee.name}: 振込先が未設定です。支払先設定に入力してください。` });
+    }
+  });
 
   calculated = {
     period: periodInput.value || currentMonthValue(),
@@ -482,6 +651,7 @@ function renderResults() {
     <div class="summary-card">
       <span>${escapeHtml(payee.name)}</span>
       <strong>${yen.format(totals[payee.id] || 0)}</strong>
+      <small>${escapeHtml(isPayeeReady(payee) ? "振込先設定済み" : "振込先未設定")}</small>
     </div>
   `).join("");
 
@@ -547,16 +717,16 @@ function sumByPayee(items) {
 function buildTransferHtml() {
   const totals = sumByPayee(calculated.items);
   return reportContent("振込明細", `
-    <p class="warning">テスト用ダミー情報。${escapeHtml(monthEndLabel(calculated.payoutMonth))}に振り込む分だけを表示しています。実運用前に銀行情報を差し替えてください。</p>
+    <p class="warning">支払先情報はこの端末に保存された内容を表示しています。${escapeHtml(monthEndLabel(calculated.payoutMonth))}に振り込む分だけを確認してください。</p>
     <table>
       <thead><tr><th>支払先</th><th>銀行情報</th><th>振込額</th><th>備考</th></tr></thead>
       <tbody>
         ${Object.values(PAYEES).map((payee) => `
           <tr>
             <td>${escapeHtml(payee.name)}</td>
-            <td>${escapeHtml(payee.bank)}</td>
+            <td>${escapeHtml(formatBank(payee))}</td>
             <td class="right">${yen.format(totals[payee.id] || 0)}</td>
-            <td>${escapeHtml(payee.note)}</td>
+            <td>${escapeHtml(formatPayeeNote(payee))}</td>
           </tr>
         `).join("")}
       </tbody>
@@ -566,7 +736,7 @@ function buildTransferHtml() {
 
 function buildDistributionHtml() {
   return reportContent("報酬配分明細", `
-    <p class="warning">テスト用ダミー情報。初期費用は申込入金月の翌月末、月額は対象月末支払いとして予定化しています。</p>
+    <p class="warning">初期費用は申込入金月の翌月末、月額は対象月末支払いとして予定化しています。実運用前に税務・経理ルールを確認してください。</p>
     <table>
       <thead>
         <tr><th>顧客</th><th>コード</th><th>プラン</th><th>区分</th><th>入金月</th><th>対象月</th><th>支払月</th><th>原資</th><th>ゆとりBASE</th><th>ヨウスケさん</th><th>オーナー</th></tr>
@@ -603,7 +773,7 @@ function buildNoticeHtml() {
   return reportContent("支払通知書", grouped.map(({ payee, rows }) => `
     <section class="notice">
       <h2>${escapeHtml(payee.name)} 御中</h2>
-      <p>支払月: ${escapeHtml(monthEndLabel(calculated.payoutMonth))} / インボイス番号: ${escapeHtml(payee.invoice)}</p>
+      <p>支払月: ${escapeHtml(monthEndLabel(calculated.payoutMonth))} / インボイス番号: ${escapeHtml(formatInvoice(payee))}</p>
       <table>
         <thead><tr><th>顧客</th><th>コード</th><th>区分</th><th>対象月</th><th>支払額</th></tr></thead>
         <tbody>
@@ -743,6 +913,17 @@ sampleButton.addEventListener("click", () => {
 });
 
 resetButton.addEventListener("click", resetAll);
+payeeSettingsToggle.addEventListener("click", () => {
+  renderPayeeSettings();
+  payeeSettingsPanel.classList.toggle("hidden");
+  payeeSettingsToggle.textContent = payeeSettingsPanel.classList.contains("hidden") ? "設定を開く" : "設定を閉じる";
+});
+closePayeeSettingsButton.addEventListener("click", () => {
+  payeeSettingsPanel.classList.add("hidden");
+  payeeSettingsToggle.textContent = "設定を開く";
+});
+savePayeeSettingsButton.addEventListener("click", savePayeeSettings);
+clearPayeeSettingsButton.addEventListener("click", clearPayeeSettings);
 copyFallbackButton.addEventListener("click", copyFallbackText);
 ownerEscalationButton.addEventListener("click", () => showFailure("オーナー確認へ回す操作を選択しました。"));
 calculateButton.addEventListener("click", calculateDistribution);
@@ -788,3 +969,5 @@ if ("serviceWorker" in navigator) {
 
 periodInput.value = currentMonthValue();
 payoutMonthInput.value = addMonths(currentMonthValue(), 1);
+loadPayeeSettings();
+renderPayeeSettings();
