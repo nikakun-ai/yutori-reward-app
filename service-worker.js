@@ -1,4 +1,4 @@
-const CACHE_NAME = "yutori-reward-pwa-v2";
+const CACHE_NAME = "yutori-reward-pwa-v3";
 const ASSETS = [
   "./",
   "./index.html",
