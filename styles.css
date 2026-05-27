@@ -101,9 +101,15 @@ main {
 }
 
 .steps,
-.check-list {
+.check-list,
+.scheme-list {
   margin: 0;
   padding-left: 20px;
+}
+
+.scheme-list {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .note,
@@ -275,6 +281,17 @@ select {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.table-heading {
+  margin: 14px 0 8px;
+  font-size: 15px;
+}
+
+.empty-text {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .print-area {
