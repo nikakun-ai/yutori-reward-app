@@ -139,9 +139,9 @@ function extractAmount(block, keyword) {
 }
 
 function extractPlan(block) {
-  if (/アルティマ/.test(block)) return "ARB アルティマプラン";
-  if (/アドバンス/.test(block)) return "ARB アドバンスプラン";
-  if (/ベーシック/.test(block)) return "ARB ベーシックプラン";
+  if (/アルティマ|ULTIMA/i.test(block)) return "ARB アルティマプラン";
+  if (/アドバンス|ADVANCE|ADVANCED/i.test(block)) return "ARB アドバンスプラン";
+  if (/ベーシック|BASIC/i.test(block)) return "ARB ベーシックプラン";
   return "";
 }
 
@@ -149,11 +149,16 @@ function extractCustomer(line, code) {
   const cleaned = normalizeText(line)
     .replace(code, "")
     .replace(/代理店コード[:：]?\s*/g, "")
+    .replace(/Agency\s*Code[:：]?\s*/gi, "")
     .replace(/顧客名[:：]?\s*/g, "")
+    .replace(/Customer[:：]?\s*/gi, "")
     .replace(/契約先[:：]?\s*/g, "")
     .replace(/プラン[:：]?.*/g, "")
+    .replace(/Plan[:：]?.*/gi, "")
     .replace(/初期.*$/g, "")
     .replace(/月額.*$/g, "")
+    .replace(/Initial.*$/gi, "")
+    .replace(/Monthly.*$/gi, "")
     .trim();
   return cleaned || "顧客名未読取";
 }
@@ -173,6 +178,8 @@ function parseStatementText(text) {
     const code = codeMatch[0].toUpperCase();
     let initialFee = extractAmount(block, "初期(?:手数料)?");
     let monthlyFee = extractAmount(block, "月額(?:手数料)?");
+    initialFee ||= extractAmount(block, "Initial(?:\\s*Fee)?");
+    monthlyFee ||= extractAmount(block, "Monthly(?:\\s*Fee)?");
 
     if (!initialFee && !monthlyFee) {
       const amounts = [...block.matchAll(/[¥円]?\s*([\d,]{4,})\s*円?/g)].map((match) => toNumber(match[1]));
