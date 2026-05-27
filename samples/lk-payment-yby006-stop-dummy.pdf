@@ -12,7 +12,7 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
 endobj
 5 0 obj
-<< /Length 337 >>
+<< /Length 347 >>
 stream
 BT
 /F1 10 Tf
@@ -36,7 +36,7 @@ T*
 T*
 (Initial Fee: 140000 JPY) Tj
 T*
-(Monthly Fee: 6000 JPY) Tj
+(Monthly Fee Per Month: 6000 JPY) Tj
 T*
 ET
 endstream
@@ -52,5 +52,5 @@ xref
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
-699
+709
 %%EOF
