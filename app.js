@@ -186,15 +186,19 @@ function parseStatementText(text) {
   const codeLineIndexes = lines
     .map((line, index) => (line.match(/YBY\d{3}/i) ? index : -1))
     .filter((index) => index >= 0);
+  const customerLineIndexes = lines
+    .map((line, index) => (/(Customer|顧客名|契約先)/i.test(line) ? index : -1))
+    .filter((index) => index >= 0);
+  const recordStartIndexes = customerLineIndexes.length ? customerLineIndexes : codeLineIndexes;
 
-  lines.forEach((line, index) => {
-    const codeMatch = line.match(/YBY\d{3}/i);
+  recordStartIndexes.forEach((index, recordIndex) => {
+    const nextRecordIndex = recordStartIndexes[recordIndex + 1];
+    const searchEnd = nextRecordIndex || Math.min(lines.length, index + 12);
+    const searchStart = customerLineIndexes.length ? index : Math.max(0, index - 6);
+    const block = lines.slice(searchStart, searchEnd).join(" ");
+    const codeMatch = block.match(/YBY\d{3}/i);
     if (!codeMatch) return;
 
-    const nextCodeIndex = codeLineIndexes.find((lineIndex) => lineIndex > index);
-    const start = Math.max(0, index - 6);
-    const end = Math.min(lines.length, nextCodeIndex ? nextCodeIndex : index + 12);
-    const block = lines.slice(start, end).join(" ");
     const code = codeMatch[0].toUpperCase();
     let initialFee = extractAmount(block, "初期(?:手数料)?");
     let monthlyFee = extractAmount(block, "月額(?:手数料)?");
