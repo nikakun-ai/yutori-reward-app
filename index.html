@@ -9,9 +9,9 @@
     <title>ゆとりBASE 報酬分配</title>
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css?v=20260528-4">
+    <link rel="stylesheet" href="./styles.css?v=20260528-5">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
-    <script src="./app.js?v=20260528-4" defer></script>
+    <script src="./app.js?v=20260528-5" defer></script>
   </head>
   <body>
     <header class="app-header">
@@ -27,8 +27,8 @@
         <h2>使い方</h2>
         <ol class="steps">
           <li>LKの支払明細PDFを選びます。</li>
-          <li>読取結果を確認します。</li>
-          <li>配分結果を見て、振込明細をPDF保存します。</li>
+          <li>今回の支払月を確認します。</li>
+          <li>読取結果を確認して、振込明細をPDF保存します。</li>
         </ol>
         <p class="note">PDFが読めない場合、代表には手入力させず、オーナーへ送る案内を出します。</p>
       </section>
@@ -46,6 +46,19 @@
         <p id="uploadStatus" class="status-text">PDFはスマホ内のブラウザで処理されます。外部APIへ送信しません。</p>
       </section>
 
+      <section class="panel scheme-panel">
+        <h2>2. 入出金スキーム</h2>
+        <label class="field">
+          <span>今回の支払月</span>
+          <input id="payoutMonthInput" type="month">
+        </label>
+        <ul class="scheme-list">
+          <li>初期費用分は、申込入金月の翌月末に支払います。</li>
+          <li>初回の月額2か月分は、利用対象月ごとに支払予定へ分けます。</li>
+          <li>口座振替分は、翌月分の入金として対象月末に支払います。</li>
+        </ul>
+      </section>
+
       <section id="failurePanel" class="panel danger hidden">
         <h2>オーナー確認へ回してください</h2>
         <p>このPDFは自動読取できません。LK明細PDFをオーナーへ送ってください。</p>
@@ -54,7 +67,7 @@
 
       <section id="reviewPanel" class="panel hidden">
         <div class="section-title">
-          <h2>2. 読取結果を確認</h2>
+          <h2>3. 読取結果を確認</h2>
           <span id="reviewCount" class="pill">0件</span>
         </div>
         <label class="field">
@@ -70,7 +83,7 @@
 
       <section id="resultPanel" class="panel hidden">
         <div class="section-title">
-          <h2>3. 配分結果</h2>
+          <h2>4. 配分結果</h2>
           <span id="resultStatus" class="pill">未計算</span>
         </div>
         <div id="summaryCards" class="summary-grid"></div>
@@ -79,7 +92,7 @@
       </section>
 
       <section id="outputPanel" class="panel hidden">
-        <h2>4. 出力</h2>
+        <h2>5. 出力</h2>
         <div class="button-grid">
           <button id="printTransferButton" type="button">振込明細を表示</button>
           <button id="printDistributionButton" type="button">配分明細を表示</button>
